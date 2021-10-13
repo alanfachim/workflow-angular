@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Cognito Stack
+Parameters:
+  AuthName:
+    Type: String
+    Description: Unique Auth Name for Cognito Resources
+  appUrl:
+    Type: String
+    Description: Unique Auth Name for Cognito Resources    
+  appPrefixUrl:
+    Type: String
+    Description: Unique Auth Name for Cognito Resources    
+  userPoolId:
+    Type: String
+    Description: Unique Auth Name for Cognito Resources        
+  
+Conditions:
+  NewPool: !Equals 
+    - !Ref userPoolId
+    - "" 
+  ReUsePool:
+    !Not [Condition: NewPool]
+    
+
+Resources:
+  # Creates a role that allows Cognito to send SNS messages
+  SNSRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal: 
+              Service: 
+                - "cognito-idp.amazonaws.com"
+            Action: 
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: "CognitoSNSPolicy"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - Effect: "Allow"
+                Action: "sns:publish"
+                Resource: "*"
+
+  # Creates a user pool in cognito for your app to auth against
+  # This example requires MFA and validates the phone number to use as MFA
+  # Other fields can be added to the schema
+  UserPool:
+    Condition: NewPool
+    Type: "AWS::Cognito::UserPool"
+    Properties:
+      UserPoolName: !Sub ${AuthName}-user-pool
+      AutoVerifiedAttributes:
+        - phone_number 
+      SmsConfiguration:
+        ExternalId: !Sub ${AuthName}-external
+        SnsCallerArn: !GetAtt SNSRole.Arn
+      Schema:
+        - Name: name
+          AttributeDataType: String
+          Mutable: true
+          Required: true
+        - Name: email
+          AttributeDataType: String
+          Mutable: false
+          Required: true
+        - Name: profile
+          AttributeDataType: String
+          Mutable: false
+          Required: true 
+  
+  # Creates a User Pool Client to be used by the identity pool
+  UserPoolClient:
+    Condition: NewPool
+    Type: "AWS::Cognito::UserPoolClient"
+    Properties:
+      ClientName: !Sub ${AuthName}-client
+      GenerateSecret: false
+      UserPoolId: !Ref UserPool
+      DefaultRedirectURI: !Sub ${appUrl}/
+      CallbackURLs:
+        - !Ref appUrl
+      AllowedOAuthFlows: 
+        - implicit 
+      AllowedOAuthScopes: 
+        - openid
+      SupportedIdentityProviders:
+        - COGNITO
+  PrefixDomainName:
+    Condition: NewPool
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Ref appPrefixUrl
+      
+      
+    # Creates a User Pool Client to be used by the identity pool
+  UserPoolClientReuse:
+    Condition: ReUsePool
+    Type: "AWS::Cognito::UserPoolClient"
+    Properties:
+      ClientName: !Sub ${AuthName}-client
+      GenerateSecret: false
+      UserPoolId: !Ref userPoolId
+      DefaultRedirectURI: !Sub ${appUrl}/
+      CallbackURLs:
+        - !Sub ${appUrl}/
+      AllowedOAuthFlows: 
+        - implicit 
+      AllowedOAuthScopes: 
+        - openid
+      SupportedIdentityProviders:
+        - COGNITO 
+
+Outputs:
+  UserPoolId:
+    Condition: NewPool
+    Value: !Ref UserPool 
+  UserPoolClientId:
+    Condition: NewPool
+    Value: !Ref UserPoolClient  
+  UserPoolClientId2:
+    Condition: ReUsePool
+    Value: !Ref UserPoolClientReuse 
